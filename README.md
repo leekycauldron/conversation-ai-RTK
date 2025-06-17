@@ -28,8 +28,8 @@ Make sure to omit the `.example` suffix in `.env.example`.
 
 Entry point: main.py (load plugins, run plugins, load data to knowledge base, attach agent to document)
 
-`/logs`: Stores all logs, useful for debugging. (Contents git ignored.)
-`/output`: Stores all output files that are sent to knowledge base. (Contents git ignored.)
+`/logs`: Stores all logs, useful for debugging. (Contents git ignored.)\n
+`/output`: Stores all output files that are sent to knowledge base. (Contents git ignored.)\n
 `/plugins`: Stores the different plugins which are called and then attached to knowledge document.
 
 ## Plugins
