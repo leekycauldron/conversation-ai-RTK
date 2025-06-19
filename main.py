@@ -61,8 +61,8 @@ def upload_to_knowledge_base(data):
     
     # Convert data to formatted text
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = os.path.join("output",f"plugin_data_{timestamp}.txt")
-    
+    filename = f"plugin_data_{timestamp}.txt"
+    path = os.path.join("output",filename)
     # Create a formatted text representation of the data
     formatted_data = f"Plugin Data Collection - {timestamp}\n\n"
     for plugin_name, plugin_data in data.items():
@@ -72,41 +72,42 @@ def upload_to_knowledge_base(data):
     
     # Save to temporary file
     try:
-        with open(filename, 'w') as f:
+        with open(path, 'w') as f:
             f.write(formatted_data)
     except Exception as e:
         logger.erro("Error writing to file: " + e)
     
     # Upload to ElevenLabs
     headers = {
-        "xi-api-key": ELEVENLABS_API_KEY
+        "Xi-api-key": ELEVENLABS_API_KEY,
+        "Api-Key": "xi-api-key"
     }
     
-    try:
-        files = {
-            'file': (filename, open(filename, 'rb'), 'text/plain')
-        }
-    except Exception as e:
-        logger.error("error saving file: " + e)
+    args = {
+        'name': "plugin_data_",  # Use the actual filename
+    }
 
-    
-    with open(filename, 'rb') as f:
+    try:
+        with open(path, 'rb') as f:
             files = {
-                'file': (filename, f, 'text/plain')
+                'file': (filename, f, 'text/plain'),
             }
-            
             response = requests.post(
                 f"{ELEVENLABS_API_URL}/convai/knowledge-base/file",
                 headers=headers,
-                files=files
+                data=args,
+                files=files,
             )
-        
+            print(response.json())
+    except Exception as e:
+        logger.error("error saving file: " + str(e))
+
     if response.status_code != 200:
         raise Exception(f"Failed to upload to knowledge base: {response.text}")
     return response.json()
 
 def update_agent_knowledge(knowledge_base_id):
-    """Update the agent to use the new knowledge base"""
+    """Update the agent to use the new plugin data knowledge base, replacing the old plugin data file but preserving others."""
     if not ELEVENLABS_API_KEY:
         raise ValueError("ELEVENLABS_API_KEY not found in environment variables")
     
@@ -115,26 +116,39 @@ def update_agent_knowledge(knowledge_base_id):
         "Content-Type": "application/json"
     }
     
-    # Note: You would need to replace AGENT_ID with your actual agent ID
     agent_id = os.getenv('ELEVENLABS_AGENT_ID')
     if not agent_id:
         raise ValueError("ELEVENLABS_AGENT_ID not found in environment variables")
     
-    # Update agent configuration to use the new knowledge base
+    # Fetch current agent config to preserve existing knowledge bases
+    current_agent = get_agent()
+    existing_kbs = []
+    try:
+        existing_kbs = current_agent["conversation_config"]["agent"]["prompt"].get("knowledge_base", [])
+    except Exception as e:
+        logger.warning(f"Could not find knowledge_base in agent config: {e}")
+    
+    # Remove any previous plugin data file (by name or id pattern)
+    filtered_kbs = [
+        kb for kb in existing_kbs
+        if not (kb.get("name", "").startswith("plugin_data_") or kb.get("id", "").startswith("plugin_data_"))
+    ]
+    
+    # Add the new plugin data file
+    filtered_kbs.append({
+        "type": "file",
+        "name": "plugin_data_",
+        "id": knowledge_base_id,
+        "usage_mode": "auto"
+    })
+    
     data = {
         "conversation_config": {
-            "agent" :{
-                "prompt":{
-                    "knowledge_base": [{
-                        "type": "file",
-                        "name": knowledge_base_id,
-                        "id": knowledge_base_id,
-                        "usage_mode": "auto"
-                    }]
+            "agent": {
+                "prompt": {
+                    "knowledge_base": filtered_kbs
                 }
-                
             }
-            
         }
     }
     
@@ -189,25 +203,29 @@ def main():
         kb_response = upload_to_knowledge_base(data)
         knowledge_base_id = kb_response['id']
         logger.info(f"Successfully uploaded to knowledge base with ID: {knowledge_base_id}")
-        
         # Update agent
         logger.info("Updating agent with new knowledge base...")
         agent_response = update_agent_knowledge(knowledge_base_id)
         logger.info("Successfully updated agent configuration")
         
         # Verify agent configuration
-        logger.info("\nVerifying agent configuration...")
+        logger.info("Verifying agent configuration...")
         agent = get_agent()
-        logger.info("\nCurrent agent configuration:")
-        if "knowledge_base" in agent.get("agent", {}):
-            logger.info("Knowledge bases:")
-            for kb in agent["agent"]["knowledge_base"]:
-                logger.info(f"- ID: {kb.get('id')}")
-                logger.info(f"  Type: {kb.get('type')}")
-                logger.info(f"  Usage mode: {kb.get('usage_mode')}")
-        else:
-            logger.warning("No knowledge bases configured")
-        # TODO: Agent Knowledge RAG.
+        logger.info("Current agent configuration:")
+        try:
+            kbs = agent["conversation_config"]["agent"]["prompt"].get("knowledge_base", [])
+            if kbs:
+                logger.info("Knowledge bases:")
+                for kb in kbs:
+                    logger.info(f"- ID: {kb.get('id')}")
+                    logger.info(f"- Name: {kb.get('name')}")
+                    logger.info(f"  Type: {kb.get('type')}")
+                    logger.info(f"  Usage mode: {kb.get('usage_mode')}")
+            else:
+                logger.warning("No knowledge bases configured")
+        except Exception as e:
+            logger.warning(f"Could not find knowledge_base in agent config: {e}")
+        # TODO: Clean up files locally AND in elevenlabs knowledge base.
         
     except Exception as e:
         logger.error(f"Error: {e}")
