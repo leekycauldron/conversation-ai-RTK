@@ -20,6 +20,7 @@ ELEVENLABS_AGENT_ID=
 
 # Plugins
 OPENWEATHER_API_KEY=
+NEWS_API_KEY=
 ```
 
 Make sure to omit the `.example` suffix in `.env.example`.
