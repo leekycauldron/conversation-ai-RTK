@@ -5,6 +5,12 @@ from datetime import datetime
 import requests
 from logger import get_logger
 from dotenv import load_dotenv
+import time
+
+
+# CONFIG
+INTERVAL_TIME = 60 * 60 # Run every x hours.
+RUN_ONCE = True # Run the updates once and then quit, ignores INTERVAL_TIME.
 
 # Load environment variables
 load_dotenv()
@@ -298,10 +304,13 @@ def main():
                 logger.warning("No knowledge bases configured")
         except Exception as e:
             logger.warning(f"Could not find knowledge_base in agent config: {e}")
-        # TODO: Clean up files locally AND in elevenlabs knowledge base.
         
     except Exception as e:
         logger.error(f"Error: {e}")
 
 if __name__ == "__main__":
-    main() 
+    while True:
+        main()
+        if RUN_ONCE:
+            break
+        time.sleep(INTERVAL_TIME)
