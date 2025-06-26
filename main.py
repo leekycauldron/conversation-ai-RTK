@@ -186,8 +186,81 @@ def get_agent():
     
     return response.json()
 
+def delete_documents_by_name(name):
+    """
+    Search all knowledge base documents with the given name and delete them.
+    Args:
+        name (str): The name of the document(s) to delete.
+    Returns:
+        list: List of deleted document IDs.
+    """
+    if not ELEVENLABS_API_KEY:
+        raise ValueError("ELEVENLABS_API_KEY not found in environment variables")
+
+    headers = {
+        "xi-api-key": ELEVENLABS_API_KEY
+    }
+    deleted_ids = []
+    # Paginate through all documents
+    next_cursor = None
+    while True:
+        params = {"page_size": 100}
+        if next_cursor:
+            params["cursor"] = next_cursor
+        response = requests.get(
+            f"{ELEVENLABS_API_URL}/convai/knowledge-base",
+            headers=headers,
+            params=params
+        )
+        if response.status_code != 200:
+            raise Exception(f"Failed to list knowledge base documents: {response.text}")
+        data = response.json()
+        documents = data.get("documents", [])
+        for doc in documents:
+            if name == doc.get("name"):
+                doc_id = doc.get("id")
+                del_resp = requests.delete(
+                    f"{ELEVENLABS_API_URL}/convai/knowledge-base/{doc_id}?force=true",
+                    headers=headers
+                )
+                if del_resp.status_code == 204:
+                    logger.info(f"Successfully deleted document f{doc_id}")
+                    deleted_ids.append(doc_id)
+                else:
+                    logger.warning(f"Failed to delete document {doc_id}: {del_resp.text}")
+        if not data.get("has_more"):
+            break
+        next_cursor = data.get("next_cursor")
+
+def delete_files_by_prefix(directory, prefix):
+    """
+    Delete all files in the specified directory that start with the given prefix.
+    Args:
+        directory (str): Path to the directory.
+        prefix (str): Filename prefix to match.
+    Returns:
+        list: List of deleted file paths.
+    """
+    deleted_files = []
+    if not os.path.isdir(directory):
+        raise ValueError(f"{directory} is not a valid directory")
+    for filename in os.listdir(directory):
+        if filename.startswith(prefix):
+            file_path = os.path.join(directory, filename)
+            try:
+                os.remove(file_path)
+                deleted_files.append(file_path)
+            except Exception as e:
+                print(f"Failed to delete {file_path}: {e}")
+    return deleted_files
+
 def main():
     try:
+        # Delete all "plugin_data_" documents from KB.
+        logger.info("Deleting 'plugin_data_' documents from knowledge base...")
+        delete_documents_by_name("plugin_data_")
+        logger.info("Deleting 'plugin_data_' documents from local...")
+        print(delete_files_by_prefix("output","plugin_data_"))
         # Load all plugins
         plugins = load_plugins()
         if not plugins:
