@@ -2,6 +2,7 @@ import os
 import json
 import importlib
 from datetime import datetime
+import time
 import requests
 from logger import get_logger
 from dotenv import load_dotenv
@@ -29,7 +30,7 @@ def upload_to_knowledge_base():
     }
     
     args = {
-        'name': "facts",  # Use the actual filename
+        'name': "facts",
     }
 
     try:
@@ -78,7 +79,7 @@ def update_agent_knowledge(knowledge_base_id):
         kb for kb in existing_kbs
         if not (kb.get("name", "").startswith("facts") or kb.get("id", "").startswith("facts"))
     ]
-    
+    print(f"using kb id {knowledge_base_id} ")
     # Add the new plugin data file
     filtered_kbs.append({
         "type": "file",
@@ -86,7 +87,7 @@ def update_agent_knowledge(knowledge_base_id):
         "id": knowledge_base_id,
         "usage_mode": "auto"
     })
-    
+    print(filtered_kbs)
     data = {
         "conversation_config": {
             "agent": {
@@ -131,8 +132,58 @@ def get_agent():
     
     return response.json()
 
+def delete_documents_by_name(name):
+    """
+    Search all knowledge base documents with the given name and delete them.
+    Args:
+        name (str): The name of the document(s) to delete.
+    Returns:
+        list: List of deleted document IDs.
+    """
+    if not ELEVENLABS_API_KEY:
+        raise ValueError("ELEVENLABS_API_KEY not found in environment variables")
+
+    headers = {
+        "xi-api-key": ELEVENLABS_API_KEY
+    }
+    deleted_ids = []
+    # Paginate through all documents
+    next_cursor = None
+    while True:
+        params = {"page_size": 100}
+        if next_cursor:
+            params["cursor"] = next_cursor
+        response = requests.get(
+            f"{ELEVENLABS_API_URL}/convai/knowledge-base",
+            headers=headers,
+            params=params
+        )
+        if response.status_code != 200:
+            raise Exception(f"Failed to list knowledge base documents: {response.text}")
+        data = response.json()
+        documents = data.get("documents", [])
+        for doc in documents:
+            if name == doc.get("name"):
+                doc_id = doc.get("id")
+                del_resp = requests.delete(
+                    f"{ELEVENLABS_API_URL}/convai/knowledge-base/{doc_id}?force=true",
+                    headers=headers
+                )
+                if del_resp.status_code == 204:
+                    logger.info(f"Successfully deleted document f{doc_id}")
+                    deleted_ids.append(doc_id)
+                else:
+                    logger.warning(f"Failed to delete document {doc_id}: {del_resp.text}")
+        if not data.get("has_more"):
+            break
+        next_cursor = data.get("next_cursor")
+
 def main():
     try:
+        # Delete all facts documents first
+        logger.info("Deleting facts documents from knowledge base...")
+        delete_documents_by_name("facts")
+        time.sleep(2)
         # Upload to knowledge base
         logger.info("Uploading data to knowledge base...")
         kb_response = upload_to_knowledge_base()
@@ -163,3 +214,6 @@ def main():
 
     except Exception as e:
         logger.error(f"Error: {e}")
+
+if __name__ == "__main__":
+    main()
